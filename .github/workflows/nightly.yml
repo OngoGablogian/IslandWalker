@@ -1,0 +1,88 @@
+# Nightly Build & Pre-release
+name: "Nightly"
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+  # Uncomment to enable scheduled runs, if desired:
+  # schedule:
+  #   - cron: '0 5 * * *'
+
+env:
+  NIGHTLY_TAG: "IslandWalker"
+  NIGHTLY_NAME: "IslandWalker"
+  NIGHTLY_BODY: |
+    This is the current Island Walker *beta* release.
+
+jobs:
+  build:
+    name: "Nightly"
+    uses: OngoGablogian/IslandWalker/.github/workflows/build.yml@main
+
+  release:
+    name: "Nightly / Release"
+    # Only proceed with the release job if this is the official repository (not a fork)
+    if: ${{ github.repository_owner == 'OngoGablogian' }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      # SET ENVIRONMENT VARIABLES
+      - id: set-env-var
+        name: "Set environment variables"
+        run: |
+          echo "SHORT_SHA=$(echo ${GITHUB_SHA} | cut -c1-8)" >> $GITHUB_ENV
+
+      # INSTALL DEPENDENCIES
+      - id: apt-get-depends
+        name: "Install dependencies"
+        run: |
+          sudo apt-get update
+          sudo apt-get install bison gcc git make -y;
+
+      # CHECKOUT REPOSITORY
+      - id: checkout-IslandWalker
+        name: "Checkout OngoGablogian/IslandWalker"
+        uses: actions/checkout@v4
+
+      # DOWNLOAD ALL BUILD ARTIFACTS
+      - id: download-IslandWalker
+        name: "Download IslandWalker"
+        uses: actions/download-artifact@v4.1.7
+        with:
+          name: "IslandWalker"
+          path: "./build"
+
+      # DELETE OLD RELEASE
+      - name: Delete old release
+        id: delete_release
+        uses: cb80/delrel@latest
+        with:
+          tag: ${{ env.NIGHTLY_TAG }}
+
+      # ADVANCE NIGHTLY TAG TO MAIN
+      - name: Advance nightly tag to main
+        run: |
+          git tag ${{ env.NIGHTLY_TAG }} -f
+          git push --tags -f "https://OngoGablogian:$GITHUB_TOKEN@github.com/OngoGablogian/IslandWalker.git"
+
+      # CREATE NEW RELEASE
+      - name: Create new release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ env.NIGHTLY_TAG }}
+          name: ${{ env.NIGHTLY_NAME }}
+          body: ${{ env.NIGHTLY_BODY }}
+          draft: false
+          prerelease: true
+
+      # UPLOAD ISLANDWALKER ASSETS
+      - name: Upload regular assets
+        id: upload
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ env.NIGHTLY_TAG }}
+          files: |
+            ./build/pokeiw-${{ env.SHORT_SHA }}.gbc
